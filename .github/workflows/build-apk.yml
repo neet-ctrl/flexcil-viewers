@@ -89,11 +89,14 @@ jobs:
         run: npx cap add android
 
       # ── 5. Patch AndroidManifest for storage + download permissions ──────
-      - name: Patch AndroidManifest.xml (storage + download permissions)
+      - name: Patch AndroidManifest.xml (storage permissions)
         run: |
           MANIFEST=/tmp/cap-build/android/app/src/main/AndroidManifest.xml
-          # Insert permissions before <application> tag
-          sed -i 's|<application|<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION"/>\n    <application|' "$MANIFEST"
+          echo "--- Original manifest head ---"
+          head -20 "$MANIFEST"
+          # Add storage permissions after the first <manifest> or existing permissions block.
+          # We insert before <application to avoid duplicating INTERNET (already present).
+          sed -i 's|<application|<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n    <application|' "$MANIFEST"
           echo "--- Patched manifest head ---"
           head -30 "$MANIFEST"
 
@@ -103,10 +106,10 @@ jobs:
         run: npx cap sync android
 
       # ── 7. Java + Android SDK ────────────────────────────────────────────
-      - name: Setup Java 17
+      - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Setup Android SDK
