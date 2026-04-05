@@ -1,0 +1,4 @@
+-keep class com.flexcilviewer.data.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn kotlin.**

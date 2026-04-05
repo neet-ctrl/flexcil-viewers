@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Folder body -->
+    <path
+        android:fillColor="#6366F1"
+        android:pathData="M20,44 Q20,38 26,38 L46,38 L52,32 L82,32 Q88,32 88,38 L88,72 Q88,78 82,78 L26,78 Q20,78 20,72 Z" />
+    <!-- Document lines -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.9"
+        android:pathData="M34,52 L74,52 Q75,52 75,53.5 Q75,55 74,55 L34,55 Q33,55 33,53.5 Q33,52 34,52Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.9"
+        android:pathData="M34,60 L64,60 Q65,60 65,61.5 Q65,63 64,63 L34,63 Q33,63 33,61.5 Q33,60 34,60Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.9"
+        android:pathData="M34,68 L55,68 Q56,68 56,69.5 Q56,71 55,71 L34,71 Q33,71 33,69.5 Q33,68 34,68Z" />
+</vector>
