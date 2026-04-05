@@ -62,5 +62,6 @@ dependencies {
     implementation(libs.gson)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.documentfile)
+    implementation(libs.androidx.appcompat)
     debugImplementation(libs.androidx.ui.tooling)
 }
