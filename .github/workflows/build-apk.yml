@@ -97,10 +97,35 @@ jobs:
 
       - name: Patch viewport for desktop mode in Android build
         run: |
-          sed -i 's|<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5" />|<meta name="viewport" content="width=1280, initial-scale=1.0" />|' \
+          sed -i 's|<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5" />|<meta name="viewport" content="width=1280" />|' \
             "$GITHUB_WORKSPACE/artifacts/flex-viewer/dist/public/index.html"
           echo "Viewport patched:"
-          grep -o 'content="[^"]*"' "$GITHUB_WORKSPACE/artifacts/flex-viewer/dist/public/index.html" | head -5
+          grep "viewport" "$GITHUB_WORKSPACE/artifacts/flex-viewer/dist/public/index.html"
+
+      - name: Patch MainActivity for desktop WebView mode
+        run: |
+          MAIN_ACTIVITY=/tmp/cap-build/android/app/src/main/java/com/flexcilviewer/app/MainActivity.java
+          cat > "$MAIN_ACTIVITY" << 'JAVA_EOF'
+          package com.flexcilviewer.app;
+
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  WebView webView = getBridge().getWebView();
+                  WebSettings settings = webView.getSettings();
+                  settings.setUseWideViewPort(true);
+                  settings.setLoadWithOverviewMode(true);
+              }
+          }
+          JAVA_EOF
+          echo "MainActivity patched:"
+          cat "$MAIN_ACTIVITY"
 
       - name: Sync web build into Android project
         working-directory: /tmp/cap-build
