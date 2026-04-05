@@ -168,8 +168,12 @@ fun MainScreen(
                             folderPath = selectedDocFolderPath,
                             onExportClick = {
                                 val allDocs = getAllDocuments(backup.rootFolders)
-                                val docEntry = allDocs.find { it.first.name == selectedDoc!!.name }
+                                val current = selectedDoc!!
+                                val docEntry = allDocs.find { it.first == current }
+                                    ?: allDocs.find { it.first.name == current.name && it.second == selectedDocFolderPath }
+                                    ?: allDocs.find { it.first.name == current.name }
                                 if (docEntry != null) openExportFor(listOf(docEntry))
+                                else openExportFor(listOf(current to selectedDocFolderPath))
                             },
                             modifier = Modifier.fillMaxSize()
                         )

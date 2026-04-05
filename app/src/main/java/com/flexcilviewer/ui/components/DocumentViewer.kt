@@ -1,9 +1,9 @@
 package com.flexcilviewer.ui.components
 
-import android.content.ContentValues
 import android.graphics.BitmapFactory
-import android.os.Build
-import android.provider.MediaStore
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -46,8 +46,6 @@ fun DocumentViewer(
     val annotationCount = doc.strokeFileCount + doc.annotationFileCount + doc.highlightFileCount
     val displayName = doc.info?.name?.takeIf { it.isNotBlank() } ?: doc.name
 
-    // Tab visibility mirrors web: PDF only if pdfData, Preview only if thumbnail,
-    // Annotations only if annotationCount > 0, Details always
     val visibleTabs = remember(doc) {
         buildList {
             if (doc.pdfData != null) add(ViewerTab.PDF)
@@ -67,7 +65,6 @@ fun DocumentViewer(
         )
     }
 
-    // Keep selectedTab within visible tabs
     LaunchedEffect(visibleTabs) {
         if (selectedTab !in visibleTabs) selectedTab = visibleTabs.first()
     }
@@ -75,32 +72,36 @@ fun DocumentViewer(
     var copiedName by remember { mutableStateOf(false) }
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
-    fun saveToDownloads(bytes: ByteArray, fileName: String, mimeType: String) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                    put(MediaStore.Downloads.MIME_TYPE, mimeType)
-                    put(MediaStore.Downloads.IS_PENDING, 1)
-                }
-                val resolver = context.contentResolver
-                val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                val item = resolver.insert(collection, values) ?: return
-                resolver.openOutputStream(item)?.use { it.write(bytes) }
-                values.clear()
-                values.put(MediaStore.Downloads.IS_PENDING, 0)
-                resolver.update(item, values, null, null)
-            }
-        } catch (_: Exception) { }
+    // ── Pending save state for file-picker based saving ──────────────────────
+    var pendingSaveBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var pendingSaveName by remember { mutableStateOf("") }
+    var pendingSaveMime by remember { mutableStateOf("application/octet-stream") }
+
+    val saveLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*")
+    ) { uri: Uri? ->
+        uri?.let { dest ->
+            val bytes = pendingSaveBytes ?: return@let
+            try {
+                context.contentResolver.openOutputStream(dest)?.use { it.write(bytes) }
+            } catch (_: Exception) {}
+            pendingSaveBytes = null
+        }
+    }
+
+    fun requestSave(bytes: ByteArray, fileName: String, mimeType: String) {
+        pendingSaveBytes = bytes
+        pendingSaveName = fileName
+        pendingSaveMime = mimeType
+        saveLauncher.launch(fileName)
     }
 
     Column(modifier = modifier.background(BackgroundDark)) {
 
-        // ── Header (matches web DocumentViewer header) ──────────────────────
+        // ── Header ───────────────────────────────────────────────────────────
         Surface(color = SurfaceDark, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
 
-                // Folder breadcrumb (Layers icon + folder path)
                 if (folderPath.isNotBlank()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -118,7 +119,6 @@ fun DocumentViewer(
                     Spacer(Modifier.height(2.dp))
                 }
 
-                // Document name + copy button row
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         displayName,
@@ -150,7 +150,6 @@ fun DocumentViewer(
                     }
                 }
 
-                // Created / Modified / Size (matches web header metadata row)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(top = 2.dp)
@@ -174,11 +173,11 @@ fun DocumentViewer(
 
                 Spacer(Modifier.height(8.dp))
 
-                // Download buttons row (matches web: PDF button, Preview button, ZIP button)
+                // ── Download buttons (PDF, Preview, ZIP) ──────────────────
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (doc.pdfData != null) {
                         Button(
-                            onClick = { saveToDownloads(doc.pdfData, "$displayName.pdf", "application/pdf") },
+                            onClick = { requestSave(doc.pdfData, "$displayName.pdf", "application/pdf") },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryIndigo),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
@@ -190,7 +189,7 @@ fun DocumentViewer(
                     }
                     if (doc.thumbnail != null) {
                         OutlinedButton(
-                            onClick = { saveToDownloads(doc.thumbnail, "${displayName}_preview.jpg", "image/jpeg") },
+                            onClick = { requestSave(doc.thumbnail, "${displayName}_preview.jpg", "image/jpeg") },
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary)
@@ -254,7 +253,6 @@ fun DocumentViewer(
                                     style = MaterialTheme.typography.labelMedium,
                                     color = if (selectedTab == tab) PrimaryIndigoLight else TextSecondary
                                 )
-                                // Annotation badge on tab (matches web)
                                 if (tab == ViewerTab.ANNOTATIONS && annotationCount > 0) {
                                     Surface(
                                         color = if (selectedTab == tab) PrimaryIndigoLight.copy(alpha = 0.2f) else PrimaryIndigoDark.copy(alpha = 0.4f),
@@ -283,7 +281,13 @@ fun DocumentViewer(
             }
             ViewerTab.PREVIEW -> PreviewPane(doc = doc, displayName = displayName, modifier = Modifier.fillMaxSize())
             ViewerTab.ANNOTATIONS -> AnnotationsPane(doc = doc, modifier = Modifier.fillMaxSize())
-            ViewerTab.DETAILS -> DetailsPane(doc = doc, displayName = displayName, folderPath = folderPath, onSaveFile = ::saveToDownloads, modifier = Modifier.fillMaxSize())
+            ViewerTab.DETAILS -> DetailsPane(
+                doc = doc,
+                displayName = displayName,
+                folderPath = folderPath,
+                onSaveFile = ::requestSave,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }
@@ -449,7 +453,7 @@ private fun DetailsPane(
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
 
-        // ── Document Details section ──────────────────────────────────────────
+        // ── Document Details ──────────────────────────────────────────────────
         DetailSection(title = "Document Details") {
             InfoRow("Name", displayName)
             if (folderPath.isNotBlank()) InfoRow("Folder", folderPath)
@@ -469,22 +473,60 @@ private fun DetailsPane(
             if (doc.thumbnail != null) InfoRow("Preview Size", formatFileSize(doc.thumbnail.size.toLong()))
         }
 
-        // ── Status badges ────────────────────────────────────────────────────
+        // ── Status badges ─────────────────────────────────────────────────────
         if (doc.pdfData != null || doc.thumbnail != null || doc.strokeFileCount > 0 || doc.annotationFileCount > 0) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (doc.pdfData != null) {
-                    BadgeChip(icon = Icons.Default.PictureAsPdf, label = "PDF", bgColor = PrimaryIndigoDark.copy(alpha = 0.5f), tint = PrimaryIndigoLight)
-                }
-                if (doc.thumbnail != null) {
-                    BadgeChip(icon = Icons.Default.Image, label = "Preview", bgColor = AccentGreen.copy(alpha = 0.2f), tint = AccentGreen)
-                }
-                if (doc.strokeFileCount > 0 || doc.annotationFileCount > 0) {
-                    BadgeChip(icon = Icons.Default.Draw, label = "Annotations", bgColor = AccentAmber.copy(alpha = 0.2f), tint = AccentAmber)
-                }
+                if (doc.pdfData != null) BadgeChip(icon = Icons.Default.PictureAsPdf, label = "PDF", bgColor = PrimaryIndigoDark.copy(alpha = 0.5f), tint = PrimaryIndigoLight)
+                if (doc.thumbnail != null) BadgeChip(icon = Icons.Default.Image, label = "Preview", bgColor = AccentGreen.copy(alpha = 0.2f), tint = AccentGreen)
+                if (doc.strokeFileCount > 0 || doc.annotationFileCount > 0) BadgeChip(icon = Icons.Default.Draw, label = "Annotations", bgColor = AccentAmber.copy(alpha = 0.2f), tint = AccentAmber)
             }
         }
 
-        // ── Embedded Files section (matches web InfoTab "Embedded Files") ─────
+        // ── Pages section (matches web: Width, Height, Rotation, PDF page) ────
+        if (doc.pages.isNotEmpty()) {
+            DetailSection(title = "Pages (${doc.pages.size})") {
+                doc.pages.forEachIndexed { i, page ->
+                    if (i > 0) HorizontalDivider(color = DividerColor, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 6.dp))
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Text(
+                            "Page ${i + 1}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            if (page.width > 0f) {
+                                Column {
+                                    Text("Width", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                    Text("${"%.0f".format(page.width)} pt", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                }
+                            }
+                            if (page.height > 0f) {
+                                Column {
+                                    Text("Height", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                    Text("${"%.0f".format(page.height)} pt", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                }
+                            }
+                            Column {
+                                Text("Rotation", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text("${page.rotation}°", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            }
+                            Column {
+                                Text("PDF page", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text("${page.pdfPage + 1}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (doc.pageCount > 0) {
+            DetailSection(title = "Pages (${doc.pageCount})") {
+                Text("Page layout details not available.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+            }
+        }
+
+        // ── Embedded Files ────────────────────────────────────────────────────
         DetailSection(title = "Embedded Files") {
             if (doc.pdfData != null) {
                 FileRow(
@@ -503,7 +545,7 @@ private fun DetailsPane(
                 )
             }
             if (doc.pageCount > 0) {
-                FileRow(emoji = "📋", name = "Page Index (${doc.pageCount} pages)", size = 0, onDownload = null)
+                FileRow(emoji = "📋", name = "Page Index (JSON)", size = 0, onDownload = null)
             }
             val totalAnnotations = doc.strokeFileCount + doc.annotationFileCount + doc.highlightFileCount
             if (totalAnnotations > 0) {
@@ -515,6 +557,8 @@ private fun DetailsPane(
         }
     }
 }
+
+// ─── Shared composables ───────────────────────────────────────────────────────
 
 @Composable
 private fun DetailSection(title: String, content: @Composable ColumnScope.() -> Unit) {

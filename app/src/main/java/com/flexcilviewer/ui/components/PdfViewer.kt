@@ -8,7 +8,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,6 +21,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -36,6 +44,7 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var globalScale by remember { mutableFloatStateOf(1.2f) }
+    var horizontalMode by remember { mutableStateOf(false) }
 
     LaunchedEffect(pdfBytes) {
         loading = true
@@ -80,7 +89,7 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    CircularProgressIndicator(color = PrimaryIndigoLight)
                     Spacer(Modifier.height(12.dp))
                     Text("Rendering PDF…", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
                 }
@@ -95,31 +104,20 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
                 ) {
                     Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = AccentRed, modifier = Modifier.size(48.dp))
                     Spacer(Modifier.height(12.dp))
-                    Text("Unable to render PDF", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleMedium)
+                    Text("Unable to render PDF", color = AccentRed, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        error ?: "",
-                        color = TextSecondary,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Text(error ?: "", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
                     if (error?.contains("password", ignoreCase = true) == true ||
                         error?.contains("encrypt", ignoreCase = true) == true) {
                         Spacer(Modifier.height(12.dp))
-                        Surface(
-                            color = AccentAmber.copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
+                        Surface(color = AccentAmber.copy(alpha = 0.15f), shape = RoundedCornerShape(8.dp)) {
                             Row(
                                 Modifier.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Icon(Icons.Default.Lock, contentDescription = null, tint = AccentAmber, modifier = Modifier.size(16.dp))
-                                Text(
-                                    "This PDF is password-protected.",
-                                    color = AccentAmber,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                                Text("This PDF is password-protected.", color = AccentAmber, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -127,17 +125,14 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
             }
             else -> {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // ── Zoom control bar ──────────────────────────────────
-                    Surface(
-                        color = SurfaceDark,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+
+                    // ── Toolbar ───────────────────────────────────────────
+                    Surface(color = SurfaceDark, modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             // Zoom out
                             IconButton(
@@ -147,12 +142,11 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
                                 Icon(Icons.Default.ZoomOut, contentDescription = "Zoom out", tint = TextSecondary, modifier = Modifier.size(20.dp))
                             }
 
-                            // Scale label
                             Text(
                                 "${(globalScale * 100).toInt()}%",
                                 color = TextSecondary,
                                 style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.width(52.dp),
+                                modifier = Modifier.width(48.dp),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
 
@@ -164,8 +158,6 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
                                 Icon(Icons.Default.ZoomIn, contentDescription = "Zoom in", tint = TextSecondary, modifier = Modifier.size(20.dp))
                             }
 
-                            Spacer(Modifier.width(16.dp))
-
                             // Reset zoom
                             IconButton(
                                 onClick = { globalScale = 1.2f },
@@ -176,37 +168,184 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
 
                             Spacer(Modifier.weight(1f))
 
-                            // Page count
                             Text(
                                 "${pages.size} page${if (pages.size != 1) "s" else ""}",
                                 color = TextMuted,
                                 style = MaterialTheme.typography.labelSmall
                             )
+
+                            Spacer(Modifier.width(8.dp))
+
+                            // Scroll direction toggle
+                            IconButton(
+                                onClick = { horizontalMode = !horizontalMode },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    if (horizontalMode) Icons.Default.SwapVert else Icons.Default.SwapHoriz,
+                                    contentDescription = if (horizontalMode) "Switch to vertical" else "Switch to horizontal",
+                                    tint = PrimaryIndigoLight,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
 
                     HorizontalDivider(color = DividerColor)
 
-                    // ── PDF pages list ────────────────────────────────────
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        itemsIndexed(pages) { index, bmp ->
-                            PdfPageItem(
-                                bitmap = bmp,
-                                pageNumber = index + 1,
-                                total = pages.size,
-                                globalScale = globalScale
-                            )
-                        }
+                    // ── Pages ─────────────────────────────────────────────
+                    if (horizontalMode) {
+                        HorizontalPdfPages(pages = pages, globalScale = globalScale)
+                    } else {
+                        VerticalPdfPages(pages = pages, globalScale = globalScale)
                     }
                 }
             }
         }
     }
 }
+
+// ── Vertical scroll with scrollbar indicator ──────────────────────────────────
+
+@Composable
+private fun VerticalPdfPages(pages: List<Bitmap>, globalScale: Float) {
+    val listState = rememberLazyListState()
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            itemsIndexed(pages) { index, bmp ->
+                PdfPageItem(
+                    bitmap = bmp,
+                    pageNumber = index + 1,
+                    total = pages.size,
+                    globalScale = globalScale
+                )
+            }
+        }
+
+        // Scrollbar
+        val scrollbarAlpha by remember {
+            derivedStateOf { if (listState.isScrollInProgress) 1f else 0.5f }
+        }
+        if (pages.size > 1) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(6.dp)
+                    .padding(vertical = 8.dp)
+                    .drawWithContent {
+                        drawContent()
+                        val totalItems = listState.layoutInfo.totalItemsCount
+                        if (totalItems == 0) return@drawWithContent
+                        val visibleItems = listState.layoutInfo.visibleItemsInfo
+                        if (visibleItems.isEmpty()) return@drawWithContent
+                        val thumbFraction = visibleItems.size.toFloat() / totalItems
+                        val scrollFraction = listState.firstVisibleItemIndex.toFloat() / totalItems
+                        val trackHeight = size.height
+                        val thumbHeight = (trackHeight * thumbFraction).coerceAtLeast(40f)
+                        val thumbTop = trackHeight * scrollFraction
+                        drawRoundRect(
+                            color = PrimaryIndigoLight.copy(alpha = scrollbarAlpha),
+                            topLeft = Offset(0f, thumbTop),
+                            size = Size(size.width, thumbHeight),
+                            cornerRadius = CornerRadius(4f)
+                        )
+                    }
+            )
+        }
+
+        // Current page indicator (bottom center)
+        val currentPage by remember {
+            derivedStateOf { (listState.firstVisibleItemIndex + 1).coerceIn(1, pages.size) }
+        }
+        if (listState.isScrollInProgress || pages.size > 1) {
+            Surface(
+                color = BackgroundDark.copy(alpha = 0.75f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp)
+            ) {
+                Text(
+                    "$currentPage / ${pages.size}",
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+// ── Horizontal page swipe mode ────────────────────────────────────────────────
+
+@Composable
+private fun HorizontalPdfPages(pages: List<Bitmap>, globalScale: Float) {
+    val pagerState = rememberPagerState(pageCount = { pages.size })
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            pageSpacing = 12.dp
+        ) { index ->
+            PdfPageItem(
+                bitmap = pages[index],
+                pageNumber = index + 1,
+                total = pages.size,
+                globalScale = globalScale
+            )
+        }
+
+        // Page indicator
+        Surface(
+            color = BackgroundDark.copy(alpha = 0.75f),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 12.dp)
+        ) {
+            Text(
+                "${pagerState.currentPage + 1} / ${pages.size}",
+                color = TextPrimary,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
+        }
+
+        // Dot indicators (for small page counts)
+        if (pages.size in 2..10) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 40.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                pages.indices.forEach { i ->
+                    Box(
+                        modifier = Modifier
+                            .size(if (i == pagerState.currentPage) 8.dp else 5.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(
+                                if (i == pagerState.currentPage) PrimaryIndigoLight
+                                else TextMuted.copy(alpha = 0.5f)
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Single page item ──────────────────────────────────────────────────────────
 
 @Composable
 private fun PdfPageItem(

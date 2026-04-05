@@ -27,16 +27,54 @@ private data class RawDocInfo(
     @SerializedName("key") val key: String? = null
 )
 
-private data class RawPageInfo(
-    @SerializedName("attachmentPage") val attachmentPage: Map<String, Any>? = null
+private data class RawAttachmentPage(
+    @SerializedName("index") val index: Int? = null,
+    @SerializedName("width") val width: Double? = null,
+    @SerializedName("pageWidth") val pageWidth: Double? = null,
+    @SerializedName("height") val height: Double? = null,
+    @SerializedName("pageHeight") val pageHeight: Double? = null,
+    @SerializedName("rotation") val rotation: Int? = null,
+    @SerializedName("rotate") val rotate: Int? = null,
+    @SerializedName("pdfPageIndex") val pdfPageIndex: Int? = null,
+    @SerializedName("attachmentPageIndex") val attachmentPageIndex: Int? = null,
+    @SerializedName("pageIndex") val pageIndex: Int? = null
 )
+
+private data class RawPageEntry(
+    @SerializedName("attachmentPage") val attachmentPage: RawAttachmentPage? = null,
+    @SerializedName("index") val index: Int? = null,
+    @SerializedName("width") val width: Double? = null,
+    @SerializedName("pageWidth") val pageWidth: Double? = null,
+    @SerializedName("height") val height: Double? = null,
+    @SerializedName("pageHeight") val pageHeight: Double? = null,
+    @SerializedName("rotation") val rotation: Int? = null,
+    @SerializedName("rotate") val rotate: Int? = null,
+    @SerializedName("pdfPageIndex") val pdfPageIndex: Int? = null,
+    @SerializedName("attachmentPageIndex") val attachmentPageIndex: Int? = null,
+    @SerializedName("pageIndex") val pageIndex: Int? = null
+)
+
+private fun RawPageEntry.toPageInfo(fallbackIndex: Int): PageInfo {
+    val ap = attachmentPage
+    val idx = ap?.index ?: index ?: fallbackIndex
+    val w = (ap?.width ?: ap?.pageWidth ?: width ?: pageWidth ?: 0.0).toFloat()
+    val h = (ap?.height ?: ap?.pageHeight ?: height ?: pageHeight ?: 0.0).toFloat()
+    val rot = ap?.rotation ?: ap?.rotate ?: rotation ?: rotate ?: 0
+    val pdfIdx = ap?.pdfPageIndex ?: ap?.attachmentPageIndex ?: ap?.pageIndex
+        ?: pdfPageIndex ?: attachmentPageIndex ?: pageIndex ?: fallbackIndex
+    return PageInfo(index = idx, width = w, height = h, rotation = rot, pdfPage = pdfIdx)
+}
 
 suspend fun parseFlexFile(context: Context, uri: Uri): FlexBackup = withContext(Dispatchers.IO) {
     var backupInfo = FlexBackupInfo()
     val rootFolders = mutableListOf<FolderNode>()
 
-    val inputStream = context.contentResolver.openInputStream(uri)
-        ?: throw IllegalStateException("Cannot open file")
+    val inputStream = if (uri.scheme == "file") {
+        java.io.FileInputStream(java.io.File(uri.path ?: throw IllegalStateException("Invalid file path")))
+    } else {
+        context.contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("Cannot open file")
+    }
 
     ZipInputStream(inputStream.buffered(1024 * 64)).use { outerZip ->
         var entry = outerZip.nextEntry
@@ -105,6 +143,7 @@ private fun parseFlxDoc(name: String, bytes: ByteArray): FlexDocument {
     var info: FlxDocInfo? = null
     var thumbnail: ByteArray? = null
     var pdfData: ByteArray? = null
+    var pages = emptyList<PageInfo>()
     var pageCount = 0
     var annotationFileCount = 0
     var strokeFileCount = 0
@@ -137,7 +176,8 @@ private fun parseFlxDoc(name: String, bytes: ByteArray): FlexDocument {
                     n == "pages.index" -> {
                         try {
                             val pagesJson = String(inner.readBytes(), Charsets.UTF_8)
-                            val pages = gson.fromJson(pagesJson, Array<RawPageInfo>::class.java)
+                            val rawPages = gson.fromJson(pagesJson, Array<RawPageEntry>::class.java)
+                            pages = rawPages.mapIndexed { i, raw -> raw.toPageInfo(i) }
                             pageCount = pages.size
                         } catch (_: Exception) { inner.skip(Long.MAX_VALUE) }
                     }
@@ -168,6 +208,7 @@ private fun parseFlxDoc(name: String, bytes: ByteArray): FlexDocument {
         thumbnail = thumbnail,
         pdfData = pdfData,
         pageCount = pageCount,
+        pages = pages,
         annotationFileCount = annotationFileCount,
         strokeFileCount = strokeFileCount,
         highlightFileCount = highlightFileCount

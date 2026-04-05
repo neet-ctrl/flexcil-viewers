@@ -15,6 +15,14 @@ data class FlxDocInfo(
     val key: String = ""
 )
 
+data class PageInfo(
+    val index: Int = 0,
+    val width: Float = 0f,
+    val height: Float = 0f,
+    val rotation: Int = 0,
+    val pdfPage: Int = 0
+)
+
 data class FlexDocument(
     val name: String,
     val flxSize: Long,
@@ -22,6 +30,7 @@ data class FlexDocument(
     val thumbnail: ByteArray? = null,
     val pdfData: ByteArray? = null,
     val pageCount: Int = 0,
+    val pages: List<PageInfo> = emptyList(),
     val annotationFileCount: Int = 0,
     val strokeFileCount: Int = 0,
     val highlightFileCount: Int = 0

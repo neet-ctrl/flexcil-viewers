@@ -1,5 +1,6 @@
 package com.flexcilviewer
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -19,6 +20,7 @@ import com.flexcilviewer.ui.screens.HomeScreen
 import com.flexcilviewer.ui.screens.MainScreen
 import com.flexcilviewer.ui.theme.BackgroundDark
 import com.flexcilviewer.ui.theme.FlexcilViewerTheme
+import com.flexcilviewer.ui.theme.PrimaryIndigoLight
 import com.flexcilviewer.ui.theme.TextPrimary
 import com.flexcilviewer.ui.theme.TextSecondary
 import com.flexcilviewer.viewmodel.FlexViewModel
@@ -31,25 +33,34 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Handle file opened externally (e.g. from Files app)
+        val intentUri: Uri? = intent?.data
+
         setContent {
             FlexcilViewerTheme {
-                FlexcilApp(viewModel = viewModel)
+                FlexcilApp(viewModel = viewModel, initialUri = intentUri)
             }
         }
     }
 }
 
 @Composable
-fun FlexcilApp(viewModel: FlexViewModel) {
+fun FlexcilApp(viewModel: FlexViewModel, initialUri: Uri? = null) {
     val context = LocalContext.current
     val parseState by viewModel.parseState.collectAsState()
+
+    // Open the intent URI once on launch
+    LaunchedEffect(initialUri) {
+        if (initialUri != null && parseState is ParseState.Idle) {
+            viewModel.openFile(context, initialUri)
+        }
+    }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) {
-            viewModel.openFile(context, uri)
-        }
+        if (uri != null) viewModel.openFile(context, uri)
     }
 
     fun launchFilePicker() {
@@ -61,6 +72,7 @@ fun FlexcilApp(viewModel: FlexViewModel) {
             is ParseState.Idle -> {
                 HomeScreen(
                     onOpenFile = { launchFilePicker() },
+                    onOpenUri = { uri -> viewModel.openFile(context, uri) },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -71,7 +83,7 @@ fun FlexcilApp(viewModel: FlexViewModel) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    CircularProgressIndicator(color = PrimaryIndigoLight)
                     Spacer(Modifier.height(20.dp))
                     Text(state.progress, color = TextPrimary, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
