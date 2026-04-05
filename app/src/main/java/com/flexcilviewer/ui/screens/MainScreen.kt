@@ -102,7 +102,7 @@ fun MainScreen(
                     },
                     onReset = {
                         scope.launch { drawerState.close() }
-                        onOpenNewFile()
+                        viewModel.resetToHome()
                     },
                     modifier = Modifier.fillMaxSize()
                 )

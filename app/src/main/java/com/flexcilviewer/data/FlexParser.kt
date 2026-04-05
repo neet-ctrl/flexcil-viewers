@@ -21,10 +21,12 @@ private data class RawBackupInfo(
 
 private data class RawDocInfo(
     @SerializedName("name") val name: String? = null,
-    @SerializedName("createDate") val createDate: Long? = null,
-    @SerializedName("modifiedDate") val modifiedDate: Long? = null,
+    @SerializedName("createDate") val createDate: Double? = null,
+    @SerializedName("modifiedDate") val modifiedDate: Double? = null,
     @SerializedName("type") val type: Int? = null,
-    @SerializedName("key") val key: String? = null
+    @SerializedName("key") val key: String? = null,
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("uuid") val uuid: String? = null
 )
 
 private data class RawAttachmentPage(
@@ -160,10 +162,12 @@ private fun parseFlxDoc(name: String, bytes: ByteArray): FlexDocument {
                             val raw = gson.fromJson(String(inner.readBytes(), Charsets.UTF_8), RawDocInfo::class.java)
                             info = FlxDocInfo(
                                 name = raw.name ?: name,
-                                createDate = raw.createDate ?: 0L,
-                                modifiedDate = raw.modifiedDate ?: 0L,
+                                createDate = raw.createDate?.toLong() ?: 0L,
+                                modifiedDate = raw.modifiedDate?.toLong() ?: 0L,
                                 type = raw.type ?: 0,
-                                key = raw.key ?: ""
+                                key = raw.key?.takeIf { it.isNotBlank() }
+                                    ?: raw.id?.takeIf { it.isNotBlank() }
+                                    ?: raw.uuid ?: ""
                             )
                         } catch (_: Exception) {}
                     }
@@ -226,11 +230,20 @@ private fun sortTree(folders: MutableList<FolderNode>) {
 private fun countDocuments(folders: List<FolderNode>): Int =
     folders.sumOf { it.documents.size + countDocuments(it.subfolders) }
 
+// Apple Core Data epoch (NSDate) is seconds since 2001-01-01 UTC
+// Unix epoch is seconds since 1970-01-01 UTC; difference = 978307200 s
+private const val APPLE_EPOCH_OFFSET_S = 978_307_200L
+
 fun formatDate(timestamp: Long): String {
     if (timestamp == 0L) return "Unknown"
-    val ms = if (timestamp > 1_000_000_000_000L) timestamp else timestamp * 1000L
+    // If already in milliseconds (> year 2001 in ms)
+    val unixMs: Long = when {
+        timestamp > 1_000_000_000_000L -> timestamp          // already ms
+        timestamp > 1_000_000_000L    -> timestamp * 1000L  // Unix seconds (year 2001+)
+        else                          -> (timestamp + APPLE_EPOCH_OFFSET_S) * 1000L // Apple epoch seconds
+    }
     val sdf = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault())
-    return sdf.format(java.util.Date(ms))
+    return sdf.format(java.util.Date(unixMs))
 }
 
 fun formatFileSize(bytes: Long): String = when {

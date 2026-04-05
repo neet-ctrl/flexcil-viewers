@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -32,6 +31,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.flexcilviewer.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,6 +46,7 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
     var error by remember { mutableStateOf<String?>(null) }
     var globalScale by remember { mutableFloatStateOf(1.2f) }
     var horizontalMode by remember { mutableStateOf(false) }
+    var maximized by remember { mutableStateOf(false) }
 
     LaunchedEffect(pdfBytes) {
         loading = true
@@ -81,6 +83,27 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
         loading = false
     }
 
+    // Fullscreen dialog
+    if (maximized && pages.isNotEmpty()) {
+        Dialog(
+            onDismissRequest = { maximized = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true, dismissOnClickOutside = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(BackgroundDark)) {
+                PdfContent(
+                    pages = pages,
+                    globalScale = globalScale,
+                    horizontalMode = horizontalMode,
+                    onScaleChange = { globalScale = it },
+                    onHorizontalToggle = { horizontalMode = it },
+                    modifier = Modifier.fillMaxSize(),
+                    isMaximized = true,
+                    onToggleMaximize = { maximized = false }
+                )
+            }
+        }
+    }
+
     Box(modifier = modifier.background(BackgroundDark)) {
         when {
             loading -> {
@@ -96,9 +119,7 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
             }
             error != null -> {
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -124,83 +145,112 @@ fun PdfViewer(pdfBytes: ByteArray, modifier: Modifier = Modifier) {
                 }
             }
             else -> {
-                Column(modifier = Modifier.fillMaxSize()) {
+                PdfContent(
+                    pages = pages,
+                    globalScale = globalScale,
+                    horizontalMode = horizontalMode,
+                    onScaleChange = { globalScale = it },
+                    onHorizontalToggle = { horizontalMode = it },
+                    modifier = Modifier.fillMaxSize(),
+                    isMaximized = false,
+                    onToggleMaximize = { maximized = true }
+                )
+            }
+        }
+    }
+}
 
-                    // ── Toolbar ───────────────────────────────────────────
-                    Surface(color = SurfaceDark, modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Zoom out
-                            IconButton(
-                                onClick = { globalScale = (globalScale - 0.2f).coerceAtLeast(0.5f) },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(Icons.Default.ZoomOut, contentDescription = "Zoom out", tint = TextSecondary, modifier = Modifier.size(20.dp))
-                            }
+// ── Shared PDF content (used in both normal and maximized modes) ──────────────
 
-                            Text(
-                                "${(globalScale * 100).toInt()}%",
-                                color = TextSecondary,
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.width(48.dp),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
+@Composable
+private fun PdfContent(
+    pages: List<Bitmap>,
+    globalScale: Float,
+    horizontalMode: Boolean,
+    onScaleChange: (Float) -> Unit,
+    onHorizontalToggle: (Boolean) -> Unit,
+    isMaximized: Boolean,
+    onToggleMaximize: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
 
-                            // Zoom in
-                            IconButton(
-                                onClick = { globalScale = (globalScale + 0.2f).coerceAtMost(4f) },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(Icons.Default.ZoomIn, contentDescription = "Zoom in", tint = TextSecondary, modifier = Modifier.size(20.dp))
-                            }
-
-                            // Reset zoom
-                            IconButton(
-                                onClick = { globalScale = 1.2f },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(Icons.Default.RestartAlt, contentDescription = "Reset zoom", tint = TextMuted, modifier = Modifier.size(18.dp))
-                            }
-
-                            Spacer(Modifier.weight(1f))
-
-                            Text(
-                                "${pages.size} page${if (pages.size != 1) "s" else ""}",
-                                color = TextMuted,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-
-                            Spacer(Modifier.width(8.dp))
-
-                            // Scroll direction toggle
-                            IconButton(
-                                onClick = { horizontalMode = !horizontalMode },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    if (horizontalMode) Icons.Default.SwapVert else Icons.Default.SwapHoriz,
-                                    contentDescription = if (horizontalMode) "Switch to vertical" else "Switch to horizontal",
-                                    tint = PrimaryIndigoLight,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+        // ── Toolbar ───────────────────────────────────────────────────────────
+        Surface(color = SurfaceDark, modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Return / back button when maximized
+                if (isMaximized) {
+                    IconButton(onClick = onToggleMaximize, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Exit fullscreen", tint = PrimaryIndigoLight, modifier = Modifier.size(20.dp))
                     }
+                    Spacer(Modifier.width(4.dp))
+                }
 
-                    HorizontalDivider(color = DividerColor)
+                // Zoom out
+                IconButton(onClick = { onScaleChange((globalScale - 0.2f).coerceAtLeast(0.5f)) }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.ZoomOut, contentDescription = "Zoom out", tint = TextSecondary, modifier = Modifier.size(20.dp))
+                }
 
-                    // ── Pages ─────────────────────────────────────────────
-                    if (horizontalMode) {
-                        HorizontalPdfPages(pages = pages, globalScale = globalScale)
-                    } else {
-                        VerticalPdfPages(pages = pages, globalScale = globalScale)
-                    }
+                Text(
+                    "${(globalScale * 100).toInt()}%",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.width(48.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
+                // Zoom in
+                IconButton(onClick = { onScaleChange((globalScale + 0.2f).coerceAtMost(4f)) }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.ZoomIn, contentDescription = "Zoom in", tint = TextSecondary, modifier = Modifier.size(20.dp))
+                }
+
+                // Reset zoom
+                IconButton(onClick = { onScaleChange(1.2f) }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.RestartAlt, contentDescription = "Reset zoom", tint = TextMuted, modifier = Modifier.size(18.dp))
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                Text(
+                    "${pages.size} page${if (pages.size != 1) "s" else ""}",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelSmall
+                )
+
+                Spacer(Modifier.width(4.dp))
+
+                // Horizontal/vertical toggle
+                IconButton(onClick = { onHorizontalToggle(!horizontalMode) }, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        if (horizontalMode) Icons.Default.SwapVert else Icons.Default.SwapHoriz,
+                        contentDescription = if (horizontalMode) "Switch to vertical" else "Switch to horizontal",
+                        tint = PrimaryIndigoLight,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Maximize / restore button
+                IconButton(onClick = onToggleMaximize, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        if (isMaximized) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                        contentDescription = if (isMaximized) "Exit fullscreen" else "Fullscreen",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
+        }
+
+        HorizontalDivider(color = DividerColor)
+
+        // ── Pages ─────────────────────────────────────────────────────────────
+        if (horizontalMode) {
+            HorizontalPdfPages(pages = pages, globalScale = globalScale)
+        } else {
+            VerticalPdfPages(pages = pages, globalScale = globalScale)
         }
     }
 }
@@ -219,66 +269,56 @@ private fun VerticalPdfPages(pages: List<Bitmap>, globalScale: Float) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             itemsIndexed(pages) { index, bmp ->
-                PdfPageItem(
-                    bitmap = bmp,
-                    pageNumber = index + 1,
-                    total = pages.size,
-                    globalScale = globalScale
-                )
+                PdfPageItem(bitmap = bmp, pageNumber = index + 1, total = pages.size, globalScale = globalScale)
             }
         }
 
-        // Scrollbar
-        val scrollbarAlpha by remember {
-            derivedStateOf { if (listState.isScrollInProgress) 1f else 0.5f }
-        }
+        // Wider scrollbar track + thumb
         if (pages.size > 1) {
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .width(6.dp)
-                    .padding(vertical = 8.dp)
+                    .width(12.dp)
+                    .padding(vertical = 8.dp, horizontal = 2.dp)
                     .drawWithContent {
-                        drawContent()
-                        val totalItems = listState.layoutInfo.totalItemsCount
-                        if (totalItems == 0) return@drawWithContent
+                        // Track
+                        drawRoundRect(
+                            color = SurfaceVariantDark,
+                            cornerRadius = CornerRadius(6f)
+                        )
+                        // Thumb
+                        val totalItems = listState.layoutInfo.totalItemsCount.takeIf { it > 0 } ?: return@drawWithContent
                         val visibleItems = listState.layoutInfo.visibleItemsInfo
                         if (visibleItems.isEmpty()) return@drawWithContent
-                        val thumbFraction = visibleItems.size.toFloat() / totalItems
+                        val thumbFraction = (visibleItems.size.toFloat() / totalItems).coerceIn(0.1f, 1f)
                         val scrollFraction = listState.firstVisibleItemIndex.toFloat() / totalItems
                         val trackHeight = size.height
                         val thumbHeight = (trackHeight * thumbFraction).coerceAtLeast(40f)
-                        val thumbTop = trackHeight * scrollFraction
+                        val thumbTop = ((trackHeight - thumbHeight) * scrollFraction).coerceIn(0f, trackHeight - thumbHeight)
                         drawRoundRect(
-                            color = PrimaryIndigoLight.copy(alpha = scrollbarAlpha),
+                            color = PrimaryIndigoLight.copy(alpha = if (listState.isScrollInProgress) 0.9f else 0.55f),
                             topLeft = Offset(0f, thumbTop),
                             size = Size(size.width, thumbHeight),
-                            cornerRadius = CornerRadius(4f)
+                            cornerRadius = CornerRadius(6f)
                         )
                     }
             )
         }
 
-        // Current page indicator (bottom center)
-        val currentPage by remember {
-            derivedStateOf { (listState.firstVisibleItemIndex + 1).coerceIn(1, pages.size) }
-        }
-        if (listState.isScrollInProgress || pages.size > 1) {
-            Surface(
-                color = BackgroundDark.copy(alpha = 0.75f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp)
-            ) {
-                Text(
-                    "$currentPage / ${pages.size}",
-                    color = TextPrimary,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                )
-            }
+        // Page counter pill
+        val currentPage by remember { derivedStateOf { (listState.firstVisibleItemIndex + 1).coerceIn(1, pages.size) } }
+        Surface(
+            color = BackgroundDark.copy(alpha = 0.80f),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
+        ) {
+            Text(
+                "$currentPage / ${pages.size}",
+                color = TextPrimary,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
         }
     }
 }
@@ -296,21 +336,14 @@ private fun HorizontalPdfPages(pages: List<Bitmap>, globalScale: Float) {
             contentPadding = PaddingValues(horizontal = 16.dp),
             pageSpacing = 12.dp
         ) { index ->
-            PdfPageItem(
-                bitmap = pages[index],
-                pageNumber = index + 1,
-                total = pages.size,
-                globalScale = globalScale
-            )
+            PdfPageItem(bitmap = pages[index], pageNumber = index + 1, total = pages.size, globalScale = globalScale)
         }
 
-        // Page indicator
+        // Page counter pill
         Surface(
-            color = BackgroundDark.copy(alpha = 0.75f),
+            color = BackgroundDark.copy(alpha = 0.80f),
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 12.dp)
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
         ) {
             Text(
                 "${pagerState.currentPage + 1} / ${pages.size}",
@@ -320,12 +353,10 @@ private fun HorizontalPdfPages(pages: List<Bitmap>, globalScale: Float) {
             )
         }
 
-        // Dot indicators (for small page counts)
+        // Dot indicators for small page counts
         if (pages.size in 2..10) {
             Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 40.dp),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -334,10 +365,7 @@ private fun HorizontalPdfPages(pages: List<Bitmap>, globalScale: Float) {
                         modifier = Modifier
                             .size(if (i == pagerState.currentPage) 8.dp else 5.dp)
                             .clip(RoundedCornerShape(50))
-                            .background(
-                                if (i == pagerState.currentPage) PrimaryIndigoLight
-                                else TextMuted.copy(alpha = 0.5f)
-                            )
+                            .background(if (i == pagerState.currentPage) PrimaryIndigoLight else TextMuted.copy(alpha = 0.5f))
                     )
                 }
             }
@@ -348,23 +376,13 @@ private fun HorizontalPdfPages(pages: List<Bitmap>, globalScale: Float) {
 // ── Single page item ──────────────────────────────────────────────────────────
 
 @Composable
-private fun PdfPageItem(
-    bitmap: Bitmap,
-    pageNumber: Int,
-    total: Int,
-    globalScale: Float
-) {
+private fun PdfPageItem(bitmap: Bitmap, pageNumber: Int, total: Int, globalScale: Float) {
     var pinchScale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            "Page $pageNumber / $total",
-            color = TextMuted,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
+        Text("Page $pageNumber / $total", color = TextMuted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 6.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()

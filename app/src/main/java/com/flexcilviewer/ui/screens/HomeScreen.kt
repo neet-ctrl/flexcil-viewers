@@ -2,6 +2,7 @@ package com.flexcilviewer.ui.screens
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -9,6 +10,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -88,6 +90,23 @@ fun HomeScreen(
             // Android 9-10 (API 28-29): use READ_EXTERNAL_STORAGE
             else -> {
                 permLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
+    }
+
+    // ── Auto-scan on launch if permission already granted ─────────────────────
+    LaunchedEffect(Unit) {
+        if (scanState is ScanState.Idle) {
+            val hasPermission = when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
+                    Environment.isExternalStorageManager()
+                else ->
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            }
+            if (hasPermission) {
+                scanState = ScanState.Scanning
+                val files = scanForFlexFiles(context)
+                scanState = if (files.isEmpty()) ScanState.Empty else ScanState.Done(files)
             }
         }
     }

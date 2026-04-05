@@ -98,6 +98,15 @@ class FlexViewModel(application: Application) : AndroidViewModel(application) {
         _checkedDocs.value = emptySet()
     }
 
+    fun resetToHome() {
+        _parseState.value = ParseState.Idle
+        _selectedDocument.value = null
+        _selectedDocFolderPath.value = ""
+        _selectedFolder.value = null
+        _checkedDocs.value = emptySet()
+        _searchQuery.value = ""
+    }
+
     fun exportToFolder(context: Context, folderUri: Uri, docs: List<Pair<FlexDocument, String>>) {
         viewModelScope.launch {
             _exportState.value = ExportState.Running
